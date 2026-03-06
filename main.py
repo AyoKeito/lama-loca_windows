@@ -312,10 +312,7 @@ def get_output_files_for_download():
 # GUI
 # ======================================================================
 
-def create_gui():
-    """Создать интерфейс Gradio"""
-
-    custom_css = """
+custom_css = """
     .gradio-container {
         max-width: 1200px !important;
     }
@@ -336,14 +333,11 @@ def create_gui():
     }
     """
 
+def create_gui():
+    """Создать интерфейс Gradio"""
+
     with gr.Blocks(
         title="Study AI Assistant",
-        theme=gr.themes.Soft(
-            primary_hue="indigo",
-            secondary_hue="purple",
-            neutral_hue="slate",
-        ),
-        css=custom_css,
     ) as app:
 
         gr.HTML("""
@@ -520,5 +514,10 @@ if __name__ == "__main__":
         server_port=config.GUI_PORT,
         share=config.GUI_SHARE,
         inbrowser=True,
-        show_api=False,
+        theme=gr.themes.Soft(
+            primary_hue="indigo",
+            secondary_hue="purple",
+            neutral_hue="slate",
+        ),
+        css=custom_css,
     )

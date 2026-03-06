@@ -58,49 +58,20 @@ if not exist "models\" mkdir models
 :: 7. Check model
 echo.
 echo -^> Proverka LLM modeli...
-set MODEL_FILE=models\model.gguf
-
-if not exist "%MODEL_FILE%" (
-    echo.
-    echo ============================================================
-    echo   [WARNING] Model LLM ne naydena!
-    echo ============================================================
-    echo.
-    echo   Rekomenduyemye modeli (ot luchshey k bystroy):
-    echo.
-    echo   1) Qwen2.5-32B Q4_K_M (~20 GB) -- MAKSIMALNOE kachestvo
-    echo      Nuzhno 24+ GB RAM
-    echo.
-    echo   2) Qwen2.5-14B Q4_K_M (~9 GB) -- OTLICHNOE kachestvo
-    echo      Nuzhno 12+ GB RAM
-    echo.
-    echo   3) Qwen2.5-7B Q4_K_M (~5 GB) -- KHOROSHEE kachestvo
-    echo      Nuzhno 8+ GB RAM
-    echo.
-    echo   4) Qwen2.5-3B Q4_K_M (~2.5 GB) -- bazovoe
-    echo      Nuzhno 4+ GB RAM
-    echo.
-
-    set "DOWNLOAD="
-    set /p DOWNLOAD="  Skachat model Qwen2.5-14B (rekomenduyetsya)? (y/n): "
-    if /i "!DOWNLOAD!" == "y" (
-        echo.
-        echo   Ustanovka huggingface-hub...
-        pip install huggingface-hub -q
-        echo   Skachivanie Qwen2.5-14B-Instruct Q4_K_M...
-        echo   Eto mozhet zanyat nekotoroe vremya...
-        huggingface-cli download Qwen/Qwen2.5-14B-Instruct-GGUF qwen2.5-14b-instruct-q4_k_m.gguf --local-dir models/ --local-dir-use-symlinks False
-        if exist "models\qwen2.5-14b-instruct-q4_k_m.gguf" (
-            move "models\qwen2.5-14b-instruct-q4_k_m.gguf" "models\model.gguf" >nul
-            echo   [OK] Model skachana i ustanovlena!
-        )
-    ) else (
-        echo   Skachayte model pozhe pered ispolzovaniem.
-        echo   Sokhranite fayl .gguf kak: models\model.gguf
-    )
-) else (
-    echo   Model naydena: %MODEL_FILE% OK
-)
+if exist "models\model.gguf" goto model_ok
+if exist "models\qwen2.5-14b-instruct-q4_k_m-00001-of-00003.gguf" goto model_ok
+echo.
+echo ============================================================
+echo   [WARNING] Model LLM ne naydena! Skachivanie...
+echo ============================================================
+echo.
+pip install huggingface-hub -q
+hf download Qwen/Qwen2.5-14B-Instruct-GGUF --include "qwen2.5-14b-instruct-q4_k_m-*.gguf" --local-dir models/
+if exist "models\qwen2.5-14b-instruct-q4_k_m-00001-of-00003.gguf" echo   [OK] Model skachana!
+goto done_model
+:model_ok
+echo   Model naydena: models\model.gguf OK
+:done_model
 
 :: 8. Done
 echo.

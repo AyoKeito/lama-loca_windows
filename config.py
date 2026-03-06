@@ -15,7 +15,18 @@ MODELS_DIR = os.path.join(BASE_DIR, "models")
 # ======================================================================
 # LLM — максимальная мощность
 # ======================================================================
-LLM_MODEL_PATH = os.path.join(MODELS_DIR, "model.gguf")
+def _find_model_path():
+    import glob
+    # Support single-file and split GGUF (llama.cpp loads all shards via first part)
+    single = os.path.join(MODELS_DIR, "model.gguf")
+    if os.path.exists(single):
+        return single
+    shards = sorted(glob.glob(os.path.join(MODELS_DIR, "*.gguf")))
+    if shards:
+        return shards[0]
+    return single  # will raise FileNotFoundError at load time
+
+LLM_MODEL_PATH = _find_model_path()
 LLM_CONTEXT_SIZE = 32768       # 32K контекст
 LLM_MAX_TOKENS = 4096          # длинные ответы
 LLM_TEMPERATURE = 0.3          # точность
