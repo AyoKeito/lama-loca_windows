@@ -84,7 +84,7 @@
 
 **Linux / macOS:**
 ```bash
-git clone https://github.com/emil-a-dev/lama-loca.git
+git clone https://github.com/AyoKeito/lama-loca.git
 cd lama-loca
 chmod +x setup.sh
 ./setup.sh
@@ -92,7 +92,7 @@ chmod +x setup.sh
 
 **Windows:**
 ```cmd
-git clone https://github.com/emil-a-dev/lama-loca.git
+git clone https://github.com/AyoKeito/lama-loca.git
 cd lama-loca
 setup.bat
 ```
