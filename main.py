@@ -417,7 +417,6 @@ def create_gui():
                     doc_output = gr.Textbox(
                         label="Сгенерированный текст",
                         lines=20,
-                        show_copy_button=True,
                     )
 
                 doc_status = gr.Textbox(label="Статус", lines=3)
@@ -442,7 +441,6 @@ def create_gui():
                     pres_output = gr.Textbox(
                         label="Структура презентации",
                         lines=20,
-                        show_copy_button=True,
                     )
                 pres_status = gr.Textbox(label="Статус", lines=3)
 
