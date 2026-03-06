@@ -80,8 +80,9 @@ if not exist "%MODEL_FILE%" (
     echo      Nuzhno 4+ GB RAM
     echo.
 
+    set "DOWNLOAD="
     set /p DOWNLOAD="  Skachat model Qwen2.5-14B (rekomenduyetsya)? (y/n): "
-    if /i "!DOWNLOAD!"=="y" (
+    if /i "!DOWNLOAD!" == "y" (
         echo.
         echo   Ustanovka huggingface-hub...
         pip install huggingface-hub -q
