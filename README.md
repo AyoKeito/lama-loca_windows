@@ -8,6 +8,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Gradio](https://img.shields.io/badge/GUI-Gradio-orange.svg)](https://gradio.app)
 [![LLM](https://img.shields.io/badge/LLM-Qwen2.5-purple.svg)](https://huggingface.co/Qwen)
+[![Windows](https://img.shields.io/badge/Windows-10%2F11-blue.svg)](https://microsoft.com/windows)
+[![API](https://img.shields.io/badge/API-FastAPI-green.svg)](https://fastapi.tiangolo.com)
 
 **Загрузи свои учебники → Получи отчёты, презентации, конспекты и ответы на вопросы**
 
@@ -21,6 +23,8 @@
 
 | | Функция | Описание |
 |:---:|---------|----------|
+| | Функция | Описание |
+|:---:|---------|----------|
 | 💬 | **Чат** | Задавайте вопросы по книгам — ответы в реальном времени (стриминг) |
 | 📝 | **Отчёты** | Академические отчёты с введением, анализом и выводами (DOCX + MD) |
 | 📊 | **Презентации** | Готовые PowerPoint-файлы (PPTX) с 10-15 слайдами |
@@ -28,6 +32,7 @@
 | ✍️ | **Эссе** | Академические эссе с аргументацией и контраргументами |
 | 🔬 | **Критический анализ** | Глубокий разбор темы: сильные/слабые стороны, выводы |
 | 📖 | **Подготовка к экзаменам** | Определения, вопросы с ответами, шпаргалки |
+| 🔌 | **REST API** | Интеграция с n8n, Make, Zapier и другими сервисами автоматизации |
 
 ---
 
@@ -77,6 +82,7 @@
 
 ### 1. Клонирование и установка
 
+**Linux / macOS:**
 ```bash
 git clone https://github.com/emil-a-dev/lama-loca.git
 cd lama-loca
@@ -84,20 +90,34 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
+**Windows:**
+```cmd
+git clone https://github.com/emil-a-dev/lama-loca.git
+cd lama-loca
+setup.bat
+```
+
 Скрипт установки автоматически:
 - Создаст виртуальное окружение
 - Установит все зависимости
-- Определит RAM и предложит оптимальную модель
-- Скачает модель (по вашему согласию)
+- Предложит скачать оптимальную модель
 
 ### 2. Запуск
 
+**Linux / macOS:**
 ```bash
 source venv/bin/activate
 python main.py
 ```
 
-Откроется GUI в браузере на `http://localhost:7860` 🎉
+**Windows:**
+```cmd
+venv\Scripts\activate
+python main.py
+```
+
+- GUI откроется в браузере на `http://localhost:7860`
+- REST API будет доступно на `http://localhost:8000` (документация: `http://localhost:8000/docs`)
 
 ### 3. Использование
 
@@ -117,6 +137,7 @@ python main.py
 | 🎯 **Реранкер** | Cross-Encoder (ms-marco) | Точная фильтрация: из 15 кандидатов → 8 лучших |
 | 🎛️ **Sampling** | temp=0.3, top_p=0.9, repeat_penalty=1.15 | Точные, связные, не повторяющиеся ответы |
 | 🖥️ **GUI** | Gradio (веб-интерфейс) | Удобная работа без командной строки |
+| 🔌 **API** | FastAPI + uvicorn | REST API для автоматизации через n8n и другие сервисы |
 
 ---
 
@@ -129,17 +150,26 @@ python main.py
 | **Qwen2.5-7B-Instruct** Q4_K_M | ~5 GB | 8+ GB | 👍 Хорошее |
 | **Qwen2.5-3B-Instruct** Q4_K_M | ~2.5 GB | 4+ GB | Базовое |
 
-> 💡 Скрипт `setup.sh` определяет объём RAM вашей системы и рекомендует оптимальную модель.
+> 💡 Скрипты `setup.sh` (Linux/macOS) и `setup.bat` (Windows) рекомендуют оптимальную модель и предлагают скачать её автоматически.
 
 ### Ручная установка модели
 
+**Linux / macOS:**
 ```bash
 pip install huggingface-hub
-# Пример для 14B (отличное качество):
 huggingface-cli download Qwen/Qwen2.5-14B-Instruct-GGUF \
     qwen2.5-14b-instruct-q4_k_m.gguf \
     --local-dir models/ --local-dir-use-symlinks False
 mv models/qwen2.5-14b-instruct-q4_k_m.gguf models/model.gguf
+```
+
+**Windows:**
+```cmd
+pip install huggingface-hub
+huggingface-cli download Qwen/Qwen2.5-14B-Instruct-GGUF ^
+    qwen2.5-14b-instruct-q4_k_m.gguf ^
+    --local-dir models/ --local-dir-use-symlinks False
+move models\qwen2.5-14b-instruct-q4_k_m.gguf models\model.gguf
 ```
 
 ---
@@ -148,19 +178,65 @@ mv models/qwen2.5-14b-instruct-q4_k_m.gguf models/model.gguf
 
 ```
 lama-loca/
-├── main.py                        # 🖥️ GUI-приложение (Gradio)
+├── main.py                        # 🖥️ GUI (Gradio) + запуск REST API
 ├── config.py                      # ⚙️ Все настройки
-├── setup.sh                       # 📦 Скрипт установки
+├── setup.sh                       # 📦 Скрипт установки (Linux/macOS)
+├── setup.bat                      # 📦 Скрипт установки (Windows)
 ├── requirements.txt               # 📋 Зависимости Python
 ├── src/
 │   ├── llm_engine.py              # 🤖 LLM движок (llama-cpp-python)
 │   ├── knowledge_base.py          # 🧠 RAG + Reranker + ChromaDB
+│   ├── api.py                     # 🔌 REST API для n8n (FastAPI)
 │   ├── document_generator.py      # 📝 Генератор DOCX / Markdown
 │   └── presentation_generator.py  # 📊 Генератор PPTX
 ├── books/                         # 📚 Ваши книги (не в git)
 ├── models/                        # 🤖 GGUF модель (не в git)
 ├── output/                        # 📁 Готовые документы (не в git)
 └── data/                          # 💾 Векторная БД (не в git)
+```
+
+---
+
+## 🔌 REST API для n8n
+
+При запуске `python main.py` автоматически стартует REST API на порту `8000`.
+
+**Swagger-документация:** `http://localhost:8000/docs`
+
+### Основные эндпоинты
+
+| Метод | URL | Описание |
+|-------|-----|----------|
+| GET | `/api/health` | Проверка состояния |
+| GET | `/api/stats` | Статистика базы знаний |
+| POST | `/api/chat` | Вопрос-ответ по книгам |
+| POST | `/api/generate` | Генерация документа |
+| POST | `/api/presentation` | Генерация презентации |
+| POST | `/api/index` | Индексировать книги из `books/` |
+| POST | `/api/books/upload` | Загрузить и проиндексировать файл |
+| DELETE | `/api/knowledge-base` | Очистить базу знаний |
+| GET | `/api/files` | Список готовых документов |
+| GET | `/api/files/{filename}` | Скачать документ |
+
+### Примеры для n8n (HTTP Request node)
+
+**Задать вопрос:**
+```json
+POST http://localhost:8000/api/chat
+{ "message": "Что такое фотосинтез?" }
+```
+
+**Сгенерировать отчёт:**
+```json
+POST http://localhost:8000/api/generate
+{ "topic": "Термодинамика", "doc_type": "report", "format": "md" }
+```
+
+Поле `doc_type`: `report` | `summary` | `essay` | `analysis` | `exam_prep`
+
+**Изменить порт API** в `config.py`:
+```python
+API_PORT = 8000  # любой свободный порт
 ```
 
 ---
@@ -195,6 +271,8 @@ pip install llama-cpp-python --force-reinstall --no-cache-dir \
 | `CHUNK_SIZE` | 1500 | Размер фрагмента текста |
 | `RETRIEVAL_TOP_K` | 15 | Кандидатов при поиске |
 | `RERANK_TOP_K` | 8 | Финальных результатов после реранкинга |
+| `API_HOST` | `0.0.0.0` | Хост REST API |
+| `API_PORT` | 8000 | Порт REST API |
 
 ---
 

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Study AI Assistant — GUI приложение на Gradio
-Красивый интерфейс для работы с локальной ИИ-моделью
+Study AI Assistant — GUI приложение на Gradio + REST API для n8n
 """
 import sys
 import os
@@ -39,6 +38,19 @@ def init_llm():
         llm = LLMEngine()
         llm.load()
     return llm
+
+
+def _start_api_server():
+    """Запустить FastAPI сервер в фоновом потоке."""
+    import uvicorn
+    from src.api import app as api_app, set_globals
+    set_globals(init_kb, init_llm, doc_gen, pres_gen)
+    uvicorn.run(
+        api_app,
+        host=config.API_HOST,
+        port=config.API_PORT,
+        log_level="warning",
+    )
 
 
 # ======================================================================
@@ -497,9 +509,14 @@ if __name__ == "__main__":
     os.makedirs(config.DATA_DIR, exist_ok=True)
 
     print("=" * 60)
-    print("  📚 Study AI Assistant")
-    print("  Запуск GUI-интерфейса...")
+    print("  Study AI Assistant")
+    print("  Zapusk GUI + REST API...")
     print("=" * 60)
+
+    # Запускаем REST API в фоне
+    api_thread = threading.Thread(target=_start_api_server, daemon=True)
+    api_thread.start()
+    print(f"  REST API: http://{config.API_HOST}:{config.API_PORT}/docs")
 
     app = create_gui()
     app.launch(

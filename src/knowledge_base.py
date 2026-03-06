@@ -67,8 +67,8 @@ def load_epub_file(path: str) -> str:
 
 def load_fb2_file(path: str) -> str:
     from bs4 import BeautifulSoup
-    with open(path, "r", encoding="utf-8") as f:
-        soup = BeautifulSoup(f.read(), "lxml-xml")
+    text = load_text_file(path)
+    soup = BeautifulSoup(text, "lxml-xml")
     body = soup.find("body")
     if body:
         return body.get_text(separator="\n")

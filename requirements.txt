@@ -24,5 +24,9 @@ Jinja2>=3.1.0
 # GUI
 gradio>=4.0.0
 
+# REST API (для интеграции с n8n)
+fastapi>=0.100.0
+uvicorn>=0.23.0
+
 # Utilities
 rich>=13.0.0
