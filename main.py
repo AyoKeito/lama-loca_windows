@@ -362,7 +362,6 @@ def create_gui():
                     height=500,
                     show_label=False,
                     avatar_images=(None, "https://em-content.zobj.net/source/twitter/376/robot_1f916.png"),
-                    bubble_full_width=False,
                 )
                 with gr.Row():
                     chat_input = gr.Textbox(
