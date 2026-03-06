@@ -88,9 +88,7 @@ if not exist "%MODEL_FILE%" (
         pip install huggingface-hub -q
         echo   Skachivanie Qwen2.5-14B-Instruct Q4_K_M...
         echo   Eto mozhet zanyat nekotoroe vremya...
-        huggingface-cli download Qwen/Qwen2.5-14B-Instruct-GGUF ^
-            qwen2.5-14b-instruct-q4_k_m.gguf ^
-            --local-dir models/ --local-dir-use-symlinks False
+        huggingface-cli download Qwen/Qwen2.5-14B-Instruct-GGUF qwen2.5-14b-instruct-q4_k_m.gguf --local-dir models/ --local-dir-use-symlinks False
         if exist "models\qwen2.5-14b-instruct-q4_k_m.gguf" (
             move "models\qwen2.5-14b-instruct-q4_k_m.gguf" "models\model.gguf" >nul
             echo   [OK] Model skachana i ustanovlena!
