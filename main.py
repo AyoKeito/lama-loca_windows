@@ -222,63 +222,32 @@ def chat_respond(message: str, history: list):
         yield history + [{"role": "user", "content": message}, {"role": "assistant", "content": f"❌ Ошибка: {e}"}]
 
 
-def get_model_info():
-    """Информация о модели"""
-    model_exists = os.path.exists(config.LLM_MODEL_PATH)
-    model_size = ""
-    if model_exists:
-        size_bytes = os.path.getsize(config.LLM_MODEL_PATH)
-        size_gb = size_bytes / (1024 ** 3)
-        model_size = f"{size_gb:.1f} GB"
+def get_lm_studio_status():
+    """Проверить статус LM Studio"""
+    import urllib.request
+    try:
+        r = urllib.request.urlopen(f"{config.LM_STUDIO_URL}/models", timeout=3)
+        import json
+        data = json.loads(r.read())
+        models = [m["id"] for m in data.get("data", [])]
+        if models:
+            return f"✅ LM Studio подключён\nМодели: {', '.join(models)}"
+        return "⚠️ LM Studio запущен, но нет загруженных моделей"
+    except Exception as e:
+        return f"❌ LM Studio недоступен ({config.LM_STUDIO_URL})\n{e}"
 
-    info = f"""## Состояние системы
 
-### LLM Модель
-- **Путь**: `{config.LLM_MODEL_PATH}`
-- **Статус**: {"✅ Найдена" if model_exists else "❌ Не найдена"}
-{f"- **Размер**: {model_size}" if model_size else ""}
-- **Контекст**: {config.LLM_CONTEXT_SIZE} токенов
-- **GPU слои**: {config.LLM_GPU_LAYERS} (-1 = все на GPU)
-- **Температура**: {config.LLM_TEMPERATURE}
-
-### Эмбеддинги
-- **Модель**: `{config.EMBEDDING_MODEL}`
-
-### Реранкер
-- **Модель**: `{config.RERANKER_MODEL}`
-- **Активен**: {"✅ Да" if config.USE_RERANKER else "❌ Нет"}
-
-### Директории
-- **Книги**: `{config.BOOKS_DIR}`
-- **Результаты**: `{config.OUTPUT_DIR}`
-- **Модели**: `{config.MODELS_DIR}`
-
----
-
-## Как скачать модель
-
-### Рекомендуемые модели (от лучшей к быстрой):
-
-| Модель | RAM | Качество |
-|--------|-----|----------|
-| **Qwen2.5-32B-Instruct Q4_K_M** | 20+ GB | 🏆 Максимум |
-| **Qwen2.5-14B-Instruct Q4_K_M** | 10+ GB | ⭐ Отличное |
-| **Qwen2.5-7B-Instruct Q4_K_M** | 6+ GB | 👍 Хорошее |
-| **Qwen2.5-3B-Instruct Q4_K_M** | 4+ GB | Базовое |
-
-### Команда для скачивания (пример для 14B):
-```
-pip install huggingface-hub
-huggingface-cli download Qwen/Qwen2.5-14B-Instruct-GGUF \\
-    qwen2.5-14b-instruct-q4_k_m.gguf \\
-    --local-dir models/ \\
-    --local-dir-use-symlinks False
-mv models/qwen2.5-14b-instruct-q4_k_m.gguf models/model.gguf
-```
-
-💡 Чем больше модель, тем выше качество. Для качества уровня GPT-4 рекомендуется 32B или 14B.
-"""
-    return info
+def save_settings(lm_url, lm_model, max_tokens, temperature, top_p):
+    """Применить настройки в runtime"""
+    config.LM_STUDIO_URL = lm_url.strip()
+    config.LM_STUDIO_MODEL = lm_model.strip()
+    config.LLM_MAX_TOKENS = int(max_tokens)
+    config.LLM_TEMPERATURE = float(temperature)
+    config.LLM_TOP_P = float(top_p)
+    # Сбросить LLM чтобы переподключиться с новыми настройками
+    global llm
+    llm = None
+    return "✅ Настройки применены. LLM будет переподключён при следующем запросе."
 
 
 def list_output_files():
@@ -311,6 +280,7 @@ def get_output_files_for_download():
 custom_css = """
     .gradio-container {
         max-width: 1200px !important;
+        margin: 0 auto !important;
     }
     .main-title {
         text-align: center;
@@ -351,7 +321,6 @@ def create_gui():
                 chatbot = gr.Chatbot(
                     height=500,
                     show_label=False,
-                    type="messages",
                     avatar_images=(None, "https://em-content.zobj.net/source/twitter/376/robot_1f916.png"),
                 )
                 with gr.Row():
@@ -479,9 +448,28 @@ def create_gui():
 
             # ========== ТАБ 6: НАСТРОЙКИ ==========
             with gr.TabItem("⚙️ Настройки", id="settings"):
-                settings_info = gr.Markdown(value=get_model_info)
-                settings_refresh = gr.Button("🔄 Обновить информацию")
-                settings_refresh.click(get_model_info, outputs=[settings_info])
+                gr.Markdown("### LM Studio")
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        s_lm_url = gr.Textbox(label="LM Studio URL", value=config.LM_STUDIO_URL)
+                        s_lm_model = gr.Textbox(label="Модель (пусто = первая доступная)", value=config.LM_STUDIO_MODEL, placeholder="например: qwen2.5-14b-instruct")
+                    with gr.Column(scale=1):
+                        s_status = gr.Textbox(label="Статус", lines=3, interactive=False)
+                        s_check_btn = gr.Button("🔌 Проверить соединение")
+                s_check_btn.click(get_lm_studio_status, outputs=[s_status])
+
+                gr.Markdown("### Параметры генерации")
+                with gr.Row():
+                    s_max_tokens = gr.Number(label="Max tokens", value=config.LLM_MAX_TOKENS, precision=0)
+                    s_temperature = gr.Slider(label="Temperature", minimum=0.0, maximum=2.0, step=0.05, value=config.LLM_TEMPERATURE)
+                    s_top_p = gr.Slider(label="Top P", minimum=0.0, maximum=1.0, step=0.05, value=config.LLM_TOP_P)
+
+                gr.Markdown("### Система")
+                gr.Markdown(f"- **Эмбеддинги**: `{config.EMBEDDING_MODEL}`\n- **Реранкер**: `{config.RERANKER_MODEL}`\n- **Книги**: `{config.BOOKS_DIR}`\n- **Результаты**: `{config.OUTPUT_DIR}`")
+
+                s_save_btn = gr.Button("💾 Применить настройки", variant="primary")
+                s_save_status = gr.Textbox(label="", lines=1, interactive=False)
+                s_save_btn.click(save_settings, inputs=[s_lm_url, s_lm_model, s_max_tokens, s_temperature, s_top_p], outputs=[s_save_status])
 
     return app
 

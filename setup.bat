@@ -43,27 +43,38 @@ if not exist "venv\" (
 :: 4. Activate venv
 call venv\Scripts\activate.bat
 
-:: 5. Install PyTorch with CUDA
+:: 5. Install PyTorch (for embeddings/reranker)
 echo.
-echo -^> Ustanovka PyTorch (CUDA 12.6)...
+echo -^> Ustanovka PyTorch...
+where nvidia-smi >nul 2>&1
+if errorlevel 1 goto torch_cpu
+
+:: NVIDIA GPU found — detect CUDA version and install matching torch
+python -c "import subprocess,re; o=subprocess.getoutput('nvcc --version'); m=re.search(r'release (\d+)\.(\d+)', o); f=open('_cuda_ver.tmp','w'); f.write(m.group(1)+'.'+m.group(2) if m else ''); f.close()"
+set /p CUDA_VER=<_cuda_ver.tmp
+del _cuda_ver.tmp
+for /f "tokens=1,2 delims=." %%a in ("!CUDA_VER!") do set CUDA_TAG=cu%%a%%b
+echo   NVIDIA GPU nayden, CUDA !CUDA_VER! (tag: !CUDA_TAG!)
+uv pip install torch torchvision --index-url https://download.pytorch.org/whl/!CUDA_TAG!
+if not errorlevel 1 goto torch_done
+echo   [WARN] !CUDA_TAG! ne nayden, probuju cu130...
+uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+if not errorlevel 1 goto torch_done
+echo   [WARN] cu130 ne nayden, probuju cu128...
+uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+if not errorlevel 1 goto torch_done
+echo   [WARN] cu128 ne nayden, probuju cu126...
 uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
-if errorlevel 1 (
-    echo   [WARN] PyTorch CUDA ne ustanovlen, ustanavlivayu CPU versiju...
-    uv pip install torch
-)
+if not errorlevel 1 goto torch_done
 
-:: 6. Install llama-cpp-python with CUDA (requires pip for cmake args)
-echo.
-echo -^> Ustanovka llama-cpp-python s CUDA...
-pip install llama-cpp-python --force-reinstall --no-cache-dir -C cmake.args="-DGGML_CUDA=ON"
-if errorlevel 1 (
-    echo   [WARN] llama-cpp-python CUDA ne ustanovlen, ustanavlivayu CPU versiju...
-    uv pip install llama-cpp-python
-)
+:torch_cpu
+echo   Ustanovka PyTorch (CPU)...
+uv pip install torch torchvision
+:torch_done
 
-:: 7. Install remaining dependencies
+:: 6. Install dependencies
 echo.
-echo -^> Ustanovka zavisimostey (mozhet zanyat 5-10 minut)...
+echo -^> Ustanovka zavisimostey...
 uv pip install -r requirements.txt
 if errorlevel 1 (
     echo [ERROR] Oshibka ustanovki zavisimostey!
@@ -72,31 +83,33 @@ if errorlevel 1 (
 )
 echo   Zavisimosti ustanovleny OK
 
-:: 8. Create directories
+:: 7. Create directories
 if not exist "books\" mkdir books
 if not exist "output\" mkdir output
 if not exist "data\" mkdir data
 if not exist "models\" mkdir models
 
-:: 9. Check model
+:: 8. Check LM Studio
 echo.
-echo -^> Proverka LLM modeli...
-if exist "models\model.gguf" goto model_ok
-if exist "models\qwen2.5-14b-instruct-q4_k_m-00001-of-00003.gguf" goto model_ok
-echo.
-echo ============================================================
-echo   [WARNING] Model LLM ne naydena! Skachivanie...
-echo ============================================================
-echo.
-uv pip install huggingface-hub
-hf download Qwen/Qwen2.5-14B-Instruct-GGUF --include "qwen2.5-14b-instruct-q4_k_m-*.gguf" --local-dir models/
-if exist "models\qwen2.5-14b-instruct-q4_k_m-00001-of-00003.gguf" echo   [OK] Model skachana!
-goto done_model
-:model_ok
-echo   Model naydena OK
-:done_model
+echo -^> Proverka LM Studio...
+python -c "import urllib.request; urllib.request.urlopen('http://localhost:1234/v1/models', timeout=3); print('ok')" >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo ============================================================
+    echo   [INFO] LM Studio ne zapushchen!
+    echo ============================================================
+    echo.
+    echo   Dlya raboty prilozhenia neobhodimo:
+    echo   1. Skachat LM Studio: https://lmstudio.ai
+    echo   2. Ustanovit i zapustit LM Studio
+    echo   3. Zagruzit model (naprimer: Qwen2.5-14B-Instruct)
+    echo   4. Zapustit server: Developer tab -^> Start Server
+    echo.
+) else (
+    echo   LM Studio server rabotaet OK
+)
 
-:: 10. Done
+:: 9. Done
 echo.
 echo ============================================================
 echo   [OK] Ustanovka zavershena!
@@ -110,8 +123,9 @@ echo.
 echo   Otkroetsya GUI v brauzere: http://localhost:7860
 echo   REST API budet dostupno na: http://localhost:8000
 echo.
-echo   1. Zagruzite knigi cherez interfeys (vkladka "Knigi")
-echo   2. Nazhmite "Indeksirovat"
-echo   3. Sozdavayte dokumenty ili zadavayte voprosy!
+echo   1. Ubedites chto LM Studio zapushchen i server aktiven
+echo   2. Zagruzite knigi cherez interfeys (vkladka "Knigi")
+echo   3. Nazhmite "Indeksirovat"
+echo   4. Sozdavayte dokumenty ili zadavayte voprosy!
 echo.
 pause
