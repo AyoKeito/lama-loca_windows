@@ -117,7 +117,9 @@ class Reranker:
             return
         from sentence_transformers import CrossEncoder
         console.print("[yellow]Загрузка реранкера...[/yellow]")
-        self._model = CrossEncoder(config.RERANKER_MODEL)
+        import torch
+        _device = "cuda" if torch.cuda.is_available() else "cpu"
+        self._model = CrossEncoder(config.RERANKER_MODEL, device=_device)
         console.print("[green]Реранкер загружен![/green]")
 
     def rerank(self, query: str, documents: List[str], top_k: int = 8) -> List[Tuple[int, float]]:
@@ -150,9 +152,11 @@ class KnowledgeBase:
         )
 
         self.progress_callback("[yellow]Загрузка модели эмбеддингов...[/yellow]")
+        import torch
+        _device = "cuda" if torch.cuda.is_available() else "cpu"
         self.embeddings = HuggingFaceEmbeddings(
             model_name=config.EMBEDDING_MODEL,
-            model_kwargs={"device": "cpu"},
+            model_kwargs={"device": _device},
             encode_kwargs={"normalize_embeddings": True},
         )
         self.progress_callback("[green]Эмбеддинги загружены![/green]")
