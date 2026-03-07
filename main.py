@@ -85,17 +85,13 @@ def on_add_book(files):
         k = init_kb()
         results = []
 
+        import shutil
         for file in files:
-            # Копируем в books/
-            filename = os.path.basename(file.name if hasattr(file, 'name') else file)
+            # Gradio 6: FileData object with .path; older: .name or plain string
+            file_path = getattr(file, 'path', None) or getattr(file, 'name', None) or file
+            filename = os.path.basename(file_path)
             dest = os.path.join(config.BOOKS_DIR, filename)
-
-            if hasattr(file, 'name'):
-                import shutil
-                shutil.copy2(file.name, dest)
-            else:
-                import shutil
-                shutil.copy2(file, dest)
+            shutil.copy2(file_path, dest)
 
             result = k.add_book(dest)
             results.append(result)
@@ -218,12 +214,12 @@ def chat_respond(message: str, history: list):
         response = ""
         for token in l.generate_with_context(template, message, context, stream=True):
             response += token
-            yield history + [[message, response]]
+            yield history + [{"role": "user", "content": message}, {"role": "assistant", "content": response}]
 
     except FileNotFoundError:
-        yield history + [[message, "❌ Модель не найдена. Скачайте модель и укажите путь в config.py"]]
+        yield history + [{"role": "user", "content": message}, {"role": "assistant", "content": "❌ Модель не найдена. Скачайте модель и укажите путь в config.py"}]
     except Exception as e:
-        yield history + [[message, f"❌ Ошибка: {e}"]]
+        yield history + [{"role": "user", "content": message}, {"role": "assistant", "content": f"❌ Ошибка: {e}"}]
 
 
 def get_model_info():
@@ -355,6 +351,7 @@ def create_gui():
                 chatbot = gr.Chatbot(
                     height=500,
                     show_label=False,
+                    type="messages",
                     avatar_images=(None, "https://em-content.zobj.net/source/twitter/376/robot_1f916.png"),
                 )
                 with gr.Row():

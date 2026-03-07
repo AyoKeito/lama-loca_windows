@@ -1,5 +1,6 @@
 # LLM inference
-llama-cpp-python>=0.2.0
+# llama-cpp-python is installed separately in setup.bat with CUDA support
+# For CPU-only fallback: pip install llama-cpp-python
 
 # Embeddings & vector store
 sentence-transformers>=2.2.0
@@ -30,3 +31,6 @@ uvicorn>=0.23.0
 
 # Utilities
 rich>=13.0.0
+
+# GPU support (torch installed separately in setup.bat with CUDA index)
+# For CPU-only fallback: pip install torch
