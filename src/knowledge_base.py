@@ -133,6 +133,41 @@ class Reranker:
 
 
 # ======================================================================
+# LM Studio Embeddings (OpenAI-compatible API)
+# ======================================================================
+
+class _LMStudioEmbeddings:
+    """Эмбеддинги через LM Studio OpenAI-совместимый API."""
+
+    def __init__(self):
+        from openai import OpenAI
+        self._client = OpenAI(base_url=config.LM_STUDIO_URL, api_key="lm-studio")
+        # Определяем ID модели
+        if config.EMBEDDING_LM_STUDIO_MODEL:
+            self._model = config.EMBEDDING_LM_STUDIO_MODEL
+        else:
+            models = self._client.models.list()
+            available = [m.id for m in models.data]
+            if not available:
+                raise RuntimeError(
+                    "LM Studio запущен, но нет загруженных моделей для эмбеддингов. "
+                    "Загрузите embedding-модель в LM Studio."
+                )
+            self._model = available[0]
+        console.print(f"[green]Embedding модель: {self._model}[/green]")
+
+    def _embed(self, texts: List[str]) -> List[List[float]]:
+        response = self._client.embeddings.create(model=self._model, input=texts)
+        return [item.embedding for item in response.data]
+
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        return self._embed(texts)
+
+    def embed_query(self, text: str) -> List[float]:
+        return self._embed([text])[0]
+
+
+# ======================================================================
 # Knowledge Base
 # ======================================================================
 
@@ -151,15 +186,20 @@ class KnowledgeBase:
             separators=["\n\n\n", "\n\n", "\n", ". ", "; ", ", ", " ", ""],
         )
 
-        self.progress_callback("[yellow]Загрузка модели эмбеддингов...[/yellow]")
-        import torch
-        _device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.embeddings = HuggingFaceEmbeddings(
-            model_name=config.EMBEDDING_MODEL,
-            model_kwargs={"device": _device},
-            encode_kwargs={"normalize_embeddings": True},
-        )
-        self.progress_callback("[green]Эмбеддинги загружены![/green]")
+        if config.EMBEDDING_USE_LM_STUDIO:
+            self.progress_callback("[yellow]Подключение к LM Studio embeddings...[/yellow]")
+            self.embeddings = _LMStudioEmbeddings()
+            self.progress_callback("[green]LM Studio embeddings подключены![/green]")
+        else:
+            self.progress_callback("[yellow]Загрузка модели эмбеддингов...[/yellow]")
+            import torch
+            _device = "cuda" if torch.cuda.is_available() else "cpu"
+            self.embeddings = HuggingFaceEmbeddings(
+                model_name=config.EMBEDDING_MODEL,
+                model_kwargs={"device": _device},
+                encode_kwargs={"normalize_embeddings": True},
+            )
+            self.progress_callback("[green]Эмбеддинги загружены![/green]")
 
         # ChromaDB
         os.makedirs(config.CHROMA_PERSIST_DIR, exist_ok=True)
@@ -227,8 +267,11 @@ class KnowledgeBase:
         for i in range(0, len(chunks), batch_size):
             batch = chunks[i:i + batch_size]
 
-            # Добавляем префикс для E5 модели
-            batch_with_prefix = [f"passage: {chunk}" for chunk in batch]
+            # E5 модели требуют префикс "passage:", LM Studio — нет
+            if config.EMBEDDING_USE_LM_STUDIO:
+                batch_with_prefix = batch
+            else:
+                batch_with_prefix = [f"passage: {chunk}" for chunk in batch]
             embeddings = self.embeddings.embed_documents(batch_with_prefix)
 
             ids = [f"{filename}_{i + j}" for j in range(len(batch))]
@@ -281,8 +324,9 @@ class KnowledgeBase:
         n_candidates = config.RETRIEVAL_TOP_K
         n_final = n_results or config.RERANK_TOP_K
 
-        # E5 модель требует префикс query:
-        query_embed = self.embeddings.embed_query(f"query: {query}")
+        # E5 модели требуют префикс "query:", LM Studio — нет
+        query_text = query if config.EMBEDDING_USE_LM_STUDIO else f"query: {query}"
+        query_embed = self.embeddings.embed_query(query_text)
 
         results = self.collection.query(
             query_embeddings=[query_embed],

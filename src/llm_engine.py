@@ -1,6 +1,7 @@
 """
 LLM Engine — обёртка над LM Studio (OpenAI-совместимый API)
 """
+import re
 from typing import Generator
 
 from rich.console import Console
@@ -64,11 +65,11 @@ class LLMEngine:
             temperature=temperature if temperature is not None else config.LLM_TEMPERATURE,
             top_p=config.LLM_TOP_P,
         )
-        return response.choices[0].message.content.strip()
+        return self._strip_think(response.choices[0].message.content.strip())
 
     def generate_stream(self, prompt: str, max_tokens: int = None,
                         temperature: float = None) -> Generator[str, None, None]:
-        """Потоковая генерация текста (для GUI)"""
+        """Потоковая генерация текста (для GUI), с фильтрацией <think> блоков"""
         if not self._loaded:
             self.load()
 
@@ -80,10 +81,43 @@ class LLMEngine:
             top_p=config.LLM_TOP_P,
             stream=True,
         )
+        # Буфер для отлова <think>...</think> в потоке
+        buffer = ""
+        in_think = False
         for chunk in stream:
             token = chunk.choices[0].delta.content
-            if token:
-                yield token
+            if not token:
+                continue
+            buffer += token
+            # Ищем открывающий тег
+            while True:
+                if in_think:
+                    end = buffer.find("</think>")
+                    if end != -1:
+                        buffer = buffer[end + len("</think>"):]
+                        in_think = False
+                    else:
+                        buffer = ""  # Весь буфер — внутри think, выбрасываем
+                        break
+                else:
+                    start = buffer.find("<think>")
+                    if start != -1:
+                        # Отдаём текст до тега
+                        before = buffer[:start]
+                        if before:
+                            yield before
+                        buffer = buffer[start + len("<think>"):]
+                        in_think = True
+                    else:
+                        # Нет тега — безопасно отдавать всё кроме возможного начала тега
+                        safe_len = max(0, len(buffer) - len("<think>"))
+                        if safe_len > 0:
+                            yield buffer[:safe_len]
+                            buffer = buffer[safe_len:]
+                        break
+        # Остаток буфера (если не в think-блоке)
+        if buffer and not in_think:
+            yield buffer
 
     def generate_with_context(self, template: str, topic: str, context: str,
                                max_tokens: int = None, stream: bool = False):
@@ -103,6 +137,13 @@ class LLMEngine:
         if stream:
             return self.generate_stream(prompt, max_tokens=max_tokens)
         return self.generate(prompt, max_tokens=max_tokens)
+
+    @staticmethod
+    def _strip_think(text: str) -> str:
+        """Убрать блоки <think>...</think> из ответа (reasoning-модели)"""
+        # Убираем весь блок <think>...</think> включая содержимое
+        text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+        return text.strip()
 
     def get_model_info(self) -> dict:
         """Информация о подключённой модели"""

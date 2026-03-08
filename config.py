@@ -3,6 +3,7 @@
 Максимально мощная локальная ИИ-система
 """
 import os
+import json
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -48,6 +49,14 @@ CHUNK_OVERLAP = 300
 RETRIEVAL_TOP_K = 15
 RERANK_TOP_K = 8
 
+# ======================================================================
+# Эмбеддинги через LM Studio (OpenAI-совместимый API)
+# Если True — используется LM Studio вместо локальной HuggingFace модели.
+# В LM Studio нужно загрузить embedding-модель (например, nomic-embed-text).
+# ======================================================================
+EMBEDDING_USE_LM_STUDIO = False
+EMBEDDING_LM_STUDIO_MODEL = ""   # "" = первая доступная embedding-модель
+
 SUPPORTED_FORMATS = [".pdf", ".txt", ".epub", ".docx", ".md", ".fb2", ".html", ".htm"]
 
 # ======================================================================
@@ -55,6 +64,56 @@ SUPPORTED_FORMATS = [".pdf", ".txt", ".epub", ".docx", ".md", ".fb2", ".html", "
 # ======================================================================
 GUI_PORT = 7860
 GUI_SHARE = False
+
+# ======================================================================
+# Персистентные настройки (сохраняются между перезапусками)
+# ======================================================================
+SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
+
+def _load_settings():
+    """Загрузить сохранённые настройки из файла"""
+    global LM_STUDIO_URL, LM_STUDIO_MODEL, LLM_MAX_TOKENS, LLM_TEMPERATURE, LLM_TOP_P
+    global CHUNK_SIZE, CHUNK_OVERLAP, RETRIEVAL_TOP_K, RERANK_TOP_K
+    global EMBEDDING_USE_LM_STUDIO, EMBEDDING_LM_STUDIO_MODEL, EMBEDDING_MODEL
+    if os.path.exists(SETTINGS_FILE):
+        try:
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                s = json.load(f)
+            LM_STUDIO_URL = s.get("LM_STUDIO_URL", LM_STUDIO_URL)
+            LM_STUDIO_MODEL = s.get("LM_STUDIO_MODEL", LM_STUDIO_MODEL)
+            LLM_MAX_TOKENS = s.get("LLM_MAX_TOKENS", LLM_MAX_TOKENS)
+            LLM_TEMPERATURE = s.get("LLM_TEMPERATURE", LLM_TEMPERATURE)
+            LLM_TOP_P = s.get("LLM_TOP_P", LLM_TOP_P)
+            CHUNK_SIZE = s.get("CHUNK_SIZE", CHUNK_SIZE)
+            CHUNK_OVERLAP = s.get("CHUNK_OVERLAP", CHUNK_OVERLAP)
+            RETRIEVAL_TOP_K = s.get("RETRIEVAL_TOP_K", RETRIEVAL_TOP_K)
+            RERANK_TOP_K = s.get("RERANK_TOP_K", RERANK_TOP_K)
+            EMBEDDING_USE_LM_STUDIO = s.get("EMBEDDING_USE_LM_STUDIO", EMBEDDING_USE_LM_STUDIO)
+            EMBEDDING_LM_STUDIO_MODEL = s.get("EMBEDDING_LM_STUDIO_MODEL", EMBEDDING_LM_STUDIO_MODEL)
+            EMBEDDING_MODEL = s.get("EMBEDDING_MODEL", EMBEDDING_MODEL)
+        except Exception:
+            pass  # Если файл повреждён — используем дефолты
+
+def save_settings():
+    """Сохранить текущие настройки в файл"""
+    s = {
+        "LM_STUDIO_URL": LM_STUDIO_URL,
+        "LM_STUDIO_MODEL": LM_STUDIO_MODEL,
+        "LLM_MAX_TOKENS": LLM_MAX_TOKENS,
+        "LLM_TEMPERATURE": LLM_TEMPERATURE,
+        "LLM_TOP_P": LLM_TOP_P,
+        "CHUNK_SIZE": CHUNK_SIZE,
+        "CHUNK_OVERLAP": CHUNK_OVERLAP,
+        "RETRIEVAL_TOP_K": RETRIEVAL_TOP_K,
+        "RERANK_TOP_K": RERANK_TOP_K,
+        "EMBEDDING_USE_LM_STUDIO": EMBEDDING_USE_LM_STUDIO,
+        "EMBEDDING_LM_STUDIO_MODEL": EMBEDDING_LM_STUDIO_MODEL,
+        "EMBEDDING_MODEL": EMBEDDING_MODEL,
+    }
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(s, f, ensure_ascii=False, indent=2)
+
+_load_settings()  # Загружаем при импорте
 
 # ======================================================================
 # REST API (для интеграции с n8n)

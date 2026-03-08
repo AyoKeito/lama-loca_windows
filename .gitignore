@@ -25,6 +25,7 @@ models/
 data/
 output/
 books/
+settings.json
 
 # OS
 .DS_Store

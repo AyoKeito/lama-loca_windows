@@ -237,17 +237,28 @@ def get_lm_studio_status():
         return f"❌ LM Studio недоступен ({config.LM_STUDIO_URL})\n{e}"
 
 
-def save_settings(lm_url, lm_model, max_tokens, temperature, top_p):
-    """Применить настройки в runtime"""
+def save_settings(lm_url, lm_model, max_tokens, temperature, top_p,
+                  chunk_size, chunk_overlap, retrieval_top_k, rerank_top_k,
+                  emb_use_lm_studio, emb_lm_studio_model, emb_hf_model):
+    """Применить и сохранить настройки"""
     config.LM_STUDIO_URL = lm_url.strip()
     config.LM_STUDIO_MODEL = lm_model.strip()
     config.LLM_MAX_TOKENS = int(max_tokens)
     config.LLM_TEMPERATURE = float(temperature)
     config.LLM_TOP_P = float(top_p)
-    # Сбросить LLM чтобы переподключиться с новыми настройками
-    global llm
+    config.CHUNK_SIZE = int(chunk_size)
+    config.CHUNK_OVERLAP = int(chunk_overlap)
+    config.RETRIEVAL_TOP_K = int(retrieval_top_k)
+    config.RERANK_TOP_K = int(rerank_top_k)
+    config.EMBEDDING_USE_LM_STUDIO = emb_use_lm_studio
+    config.EMBEDDING_LM_STUDIO_MODEL = emb_lm_studio_model.strip()
+    config.EMBEDDING_MODEL = emb_hf_model.strip()
+    config.save_settings()
+    # Сбросить LLM и KB чтобы переподключиться с новыми настройками
+    global llm, kb
     llm = None
-    return "✅ Настройки применены. LLM будет переподключён при следующем запросе."
+    kb = None
+    return "✅ Настройки сохранены. LLM и база знаний переподключатся при следующем запросе."
 
 
 def list_output_files():
@@ -279,197 +290,270 @@ def get_output_files_for_download():
 
 custom_css = """
     .gradio-container {
-        max-width: 1200px !important;
-        margin: 0 auto !important;
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
     }
-    .main-title {
-        text-align: center;
+    .app-header {
+        padding: 10px 20px;
+        border-bottom: 1px solid #2d2d2d;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .app-header h1 {
+        font-size: 1.3em;
+        font-weight: 700;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        font-size: 2.5em !important;
-        font-weight: bold;
-        margin-bottom: 0.2em;
-    }
-    .subtitle {
-        text-align: center;
-        color: #666;
-        font-size: 1.1em;
-        margin-bottom: 1em;
+        margin: 0;
     }
     """
+
 
 def create_gui():
     """Создать интерфейс Gradio"""
 
-    with gr.Blocks(
-        title="Study AI Assistant",
-    ) as app:
+    with gr.Blocks(title="Lama Loca — Study AI", fill_height=True) as app:
 
+        # --- Шапка ---
         gr.HTML("""
-        <div style="text-align: center; padding: 20px 0;">
-            <h1 class="main-title">📚 Study AI Assistant</h1>
-            <p class="subtitle">Локальный ИИ-ассистент для учёбы — учится по вашим книгам</p>
+        <div class="app-header">
+            <h1>📚 Lama Loca</h1>
+            <span style="color:#94a3b8; font-size:0.9em;">Локальный ИИ-ассистент для учёбы</span>
         </div>
         """)
 
-        with gr.Tabs() as tabs:
+        with gr.Row(elem_classes=["main-layout"]):
 
-            # ========== ТАБ 1: ЧАТ ==========
-            with gr.TabItem("💬 Чат", id="chat"):
-                gr.Markdown("### Задайте вопрос по вашим книгам")
+            # ========== ЛЕВАЯ КОЛОНКА: история ==========
+            with gr.Column(scale=0, min_width=200, elem_classes=["sidebar-left"]):
+                gr.Markdown("**История чата**", elem_id="history-label")
+                chat_clear = gr.Button("+ Новый чат", variant="secondary", size="sm")
+                gr.HTML("<hr style='margin:8px 0; border-color:#e2e8f0;'>")
+                kb_info = gr.Markdown("*База знаний:*\nНет данных", elem_id="kb-info")
+                kb_refresh_btn = gr.Button("Обновить", size="sm", variant="secondary")
+
+            # ========== ЦЕНТРАЛЬНАЯ КОЛОНКА: чат ==========
+            with gr.Column(scale=3, elem_classes=["chat-center"]):
                 chatbot = gr.Chatbot(
                     height=500,
                     show_label=False,
-                    avatar_images=(None, "https://em-content.zobj.net/source/twitter/376/robot_1f916.png"),
+                    elem_classes=["chatbot-wrap"],
+                    render_markdown=True,
                 )
-                with gr.Row():
+                with gr.Row(equal_height=True):
                     chat_input = gr.Textbox(
-                        placeholder="Введите вопрос по вашим книгам...",
+                        placeholder="Введите вопрос по вашим книгам... (Enter — отправить, Shift+Enter — новая строка)",
                         show_label=False,
+                        lines=2,
+                        max_lines=6,
                         scale=9,
                         container=False,
                     )
-                    chat_send = gr.Button("Отправить", variant="primary", scale=1)
+                    chat_send = gr.Button("Отправить", variant="primary", scale=1, min_width=100)
 
-                chat_clear = gr.Button("🗑️ Очистить чат", size="sm")
+            # ========== ПРАВАЯ КОЛОНКА: функции ==========
+            with gr.Column(scale=1, min_width=340, elem_classes=["sidebar-right"]):
+                with gr.Tabs():
 
-                chat_send.click(
-                    chat_respond,
-                    inputs=[chat_input, chatbot],
-                    outputs=[chatbot],
-                ).then(lambda: "", outputs=[chat_input])
+                    # --- Вкладка: Документы ---
+                    with gr.TabItem("📝 Документы"):
+                        doc_topic = gr.Textbox(
+                            label="Тема",
+                            placeholder="Введите тему...",
+                            lines=2,
+                        )
+                        doc_type = gr.Dropdown(
+                            choices=["Отчёт", "Конспект", "Эссе", "Анализ", "Подготовка к экзамену"],
+                            value="Отчёт",
+                            label="Тип",
+                        )
+                        doc_format = gr.Dropdown(
+                            choices=["Оба (DOCX + MD)", "DOCX", "Markdown"],
+                            value="Оба (DOCX + MD)",
+                            label="Формат",
+                        )
+                        doc_generate_btn = gr.Button("Создать документ", variant="primary")
+                        doc_status = gr.Textbox(label="Статус", lines=2, interactive=False)
+                        doc_output = gr.Textbox(label="Текст", lines=15, interactive=False)
 
-                chat_input.submit(
-                    chat_respond,
-                    inputs=[chat_input, chatbot],
-                    outputs=[chatbot],
-                ).then(lambda: "", outputs=[chat_input])
+                        doc_generate_btn.click(
+                            generate_document,
+                            inputs=[doc_topic, doc_type, doc_format],
+                            outputs=[doc_output, doc_status],
+                        )
 
-                chat_clear.click(lambda: [], outputs=[chatbot])
+                    # --- Вкладка: Презентации ---
+                    with gr.TabItem("📊 Презентации"):
+                        pres_topic = gr.Textbox(
+                            label="Тема",
+                            placeholder="Введите тему...",
+                            lines=2,
+                        )
+                        pres_generate_btn = gr.Button("Создать презентацию", variant="primary")
+                        pres_status = gr.Textbox(label="Статус", lines=2, interactive=False)
+                        pres_output = gr.Textbox(label="Структура", lines=15, interactive=False)
 
-            # ========== ТАБ 2: ДОКУМЕНТЫ ==========
-            with gr.TabItem("📝 Документы", id="docs"):
-                gr.Markdown("### Создание учебных документов")
+                        pres_generate_btn.click(
+                            generate_presentation,
+                            inputs=[pres_topic],
+                            outputs=[pres_output, pres_status],
+                        )
 
-                with gr.Row():
-                    doc_topic = gr.Textbox(
-                        label="Тема",
-                        placeholder="Введите тему документа...",
-                        scale=3,
-                    )
-                    doc_type = gr.Dropdown(
-                        choices=["Отчёт", "Конспект", "Эссе", "Анализ", "Подготовка к экзамену"],
-                        value="Отчёт",
-                        label="Тип документа",
-                        scale=1,
-                    )
-                    doc_format = gr.Dropdown(
-                        choices=["Оба (DOCX + MD)", "DOCX", "Markdown"],
-                        value="Оба (DOCX + MD)",
-                        label="Формат",
-                        scale=1,
-                    )
-
-                doc_generate_btn = gr.Button("🚀 Создать документ", variant="primary", size="lg")
-
-                with gr.Row():
-                    doc_output = gr.Textbox(
-                        label="Сгенерированный текст",
-                        lines=20,
-                    )
-
-                doc_status = gr.Textbox(label="Статус", lines=3)
-
-                doc_generate_btn.click(
-                    generate_document,
-                    inputs=[doc_topic, doc_type, doc_format],
-                    outputs=[doc_output, doc_status],
-                )
-
-            # ========== ТАБ 3: ПРЕЗЕНТАЦИИ ==========
-            with gr.TabItem("📊 Презентации", id="pres"):
-                gr.Markdown("### Создание презентаций PowerPoint")
-
-                pres_topic = gr.Textbox(
-                    label="Тема презентации",
-                    placeholder="Введите тему...",
-                )
-                pres_generate_btn = gr.Button("🚀 Создать презентацию", variant="primary", size="lg")
-
-                with gr.Row():
-                    pres_output = gr.Textbox(
-                        label="Структура презентации",
-                        lines=20,
-                    )
-                pres_status = gr.Textbox(label="Статус", lines=3)
-
-                pres_generate_btn.click(
-                    generate_presentation,
-                    inputs=[pres_topic],
-                    outputs=[pres_output, pres_status],
-                )
-
-            # ========== ТАБ 4: КНИГИ ==========
-            with gr.TabItem("📖 Книги", id="books"):
-                gr.Markdown("### Управление базой знаний")
-
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        gr.Markdown("#### Загрузить книги")
+                    # --- Вкладка: Книги ---
+                    with gr.TabItem("📖 Книги"):
                         book_upload = gr.File(
-                            label="Выберите файлы",
+                            label="Добавить книги",
                             file_count="multiple",
                             file_types=[".pdf", ".txt", ".epub", ".docx", ".md", ".fb2", ".html"],
                         )
-                        book_upload_btn = gr.Button("📥 Загрузить и индексировать", variant="primary")
+                        book_upload_btn = gr.Button("Загрузить и индексировать", variant="primary")
+                        gr.HTML("<hr style='margin:8px 0;'>")
+                        book_index_btn = gr.Button("Индексировать папку books/", variant="secondary")
+                        book_stats_btn = gr.Button("Показать статистику")
+                        book_clear_btn = gr.Button("Очистить базу", variant="stop")
+                        book_output = gr.Textbox(label="Результат", lines=8, interactive=False)
 
-                    with gr.Column(scale=1):
-                        gr.Markdown("#### Действия")
-                        book_index_btn = gr.Button("🔄 Индексировать папку books/", variant="secondary")
-                        book_stats_btn = gr.Button("📊 Статистика")
-                        book_clear_btn = gr.Button("🗑️ Очистить базу", variant="stop")
+                        book_upload_btn.click(on_add_book, inputs=[book_upload], outputs=[book_output]).then(on_get_stats, outputs=[kb_info])
+                        book_index_btn.click(on_index_books, outputs=[book_output]).then(on_get_stats, outputs=[kb_info])
+                        book_stats_btn.click(on_get_stats, outputs=[book_output])
+                        book_clear_btn.click(on_clear_kb, outputs=[book_output]).then(on_get_stats, outputs=[kb_info])
 
-                book_output = gr.Textbox(label="Результат", lines=10)
+                    # --- Вкладка: Файлы ---
+                    with gr.TabItem("📁 Файлы"):
+                        files_refresh_btn = gr.Button("Обновить список")
+                        files_list = gr.Textbox(label="Созданные документы", lines=15, value=list_output_files, interactive=False)
+                        gr.Markdown(f"Папка: `{config.OUTPUT_DIR}`")
+                        files_refresh_btn.click(list_output_files, outputs=[files_list])
 
-                book_upload_btn.click(on_add_book, inputs=[book_upload], outputs=[book_output])
-                book_index_btn.click(on_index_books, outputs=[book_output])
-                book_stats_btn.click(on_get_stats, outputs=[book_output])
-                book_clear_btn.click(on_clear_kb, outputs=[book_output])
+                    # --- Вкладка: Настройки ---
+                    with gr.TabItem("⚙️ Настройки"):
+                        gr.Markdown("**LM Studio — генерация**")
+                        s_lm_url = gr.Textbox(label="URL", value=config.LM_STUDIO_URL)
+                        s_lm_model = gr.Textbox(
+                            label="Модель LLM (пусто = первая доступная)",
+                            value=config.LM_STUDIO_MODEL,
+                            placeholder="например: qwen2.5-14b-instruct",
+                        )
+                        with gr.Row():
+                            s_check_btn = gr.Button("Проверить соединение", variant="secondary")
+                        s_status = gr.Textbox(label="Статус LM Studio", lines=2, interactive=False)
+                        s_check_btn.click(get_lm_studio_status, outputs=[s_status])
 
-            # ========== ТАБ 5: ФАЙЛЫ ==========
-            with gr.TabItem("📁 Файлы", id="files"):
-                gr.Markdown("### Созданные документы")
-                files_refresh_btn = gr.Button("🔄 Обновить список")
-                files_list = gr.Textbox(label="Файлы", lines=15, value=list_output_files)
-                files_refresh_btn.click(list_output_files, outputs=[files_list])
+                        gr.Markdown("**Параметры генерации**")
+                        s_max_tokens = gr.Number(
+                            label="Max tokens (ограничение длины ответа)",
+                            value=config.LLM_MAX_TOKENS,
+                            precision=0,
+                            minimum=256,
+                            maximum=32768,
+                        )
+                        s_temperature = gr.Slider(
+                            label="Temperature (0=точно, 1=креативно)",
+                            minimum=0.0, maximum=2.0, step=0.05,
+                            value=config.LLM_TEMPERATURE,
+                        )
+                        s_top_p = gr.Slider(
+                            label="Top P",
+                            minimum=0.0, maximum=1.0, step=0.05,
+                            value=config.LLM_TOP_P,
+                        )
 
-                gr.Markdown(f"📂 Папка с файлами: `{config.OUTPUT_DIR}`")
+                        gr.Markdown("**Эмбеддинги**")
+                        s_emb_use_lm_studio = gr.Checkbox(
+                            label="Использовать LM Studio для эмбеддингов (быстро, без локальной модели)",
+                            value=config.EMBEDDING_USE_LM_STUDIO,
+                        )
+                        s_emb_lm_studio_model = gr.Textbox(
+                            label="Embedding-модель в LM Studio (пусто = первая доступная)",
+                            value=config.EMBEDDING_LM_STUDIO_MODEL,
+                            placeholder="например: nomic-embed-text",
+                        )
+                        s_emb_hf_model = gr.Textbox(
+                            label="HuggingFace embedding-модель (если не LM Studio)",
+                            value=config.EMBEDDING_MODEL,
+                            placeholder="intfloat/multilingual-e5-large",
+                        )
+                        gr.Markdown(
+                            "_Внимание: при смене модели эмбеддингов необходимо переиндексировать книги — "
+                            "векторы несовместимы между разными моделями._",
+                        )
 
-            # ========== ТАБ 6: НАСТРОЙКИ ==========
-            with gr.TabItem("⚙️ Настройки", id="settings"):
-                gr.Markdown("### LM Studio")
-                with gr.Row():
-                    with gr.Column(scale=3):
-                        s_lm_url = gr.Textbox(label="LM Studio URL", value=config.LM_STUDIO_URL)
-                        s_lm_model = gr.Textbox(label="Модель (пусто = первая доступная)", value=config.LM_STUDIO_MODEL, placeholder="например: qwen2.5-14b-instruct")
-                    with gr.Column(scale=1):
-                        s_status = gr.Textbox(label="Статус", lines=3, interactive=False)
-                        s_check_btn = gr.Button("🔌 Проверить соединение")
-                s_check_btn.click(get_lm_studio_status, outputs=[s_status])
+                        gr.Markdown("**Параметры векторизации**")
+                        with gr.Row():
+                            s_chunk_size = gr.Number(
+                                label="Размер чанка (символов)",
+                                value=config.CHUNK_SIZE,
+                                precision=0,
+                                minimum=200,
+                                maximum=8000,
+                            )
+                            s_chunk_overlap = gr.Number(
+                                label="Перекрытие чанков",
+                                value=config.CHUNK_OVERLAP,
+                                precision=0,
+                                minimum=0,
+                                maximum=2000,
+                            )
+                        with gr.Row():
+                            s_retrieval_top_k = gr.Number(
+                                label="Кандидатов при поиске (retrieval_top_k)",
+                                value=config.RETRIEVAL_TOP_K,
+                                precision=0,
+                                minimum=1,
+                                maximum=50,
+                            )
+                            s_rerank_top_k = gr.Number(
+                                label="Финальных чанков в промпт (rerank_top_k)",
+                                value=config.RERANK_TOP_K,
+                                precision=0,
+                                minimum=1,
+                                maximum=20,
+                            )
+                        gr.Markdown(
+                            "_Чем меньше `rerank_top_k` — тем короче промпт и быстрее ответ. "
+                            "При смене размера чанка нужна переиндексация._"
+                        )
 
-                gr.Markdown("### Параметры генерации")
-                with gr.Row():
-                    s_max_tokens = gr.Number(label="Max tokens", value=config.LLM_MAX_TOKENS, precision=0)
-                    s_temperature = gr.Slider(label="Temperature", minimum=0.0, maximum=2.0, step=0.05, value=config.LLM_TEMPERATURE)
-                    s_top_p = gr.Slider(label="Top P", minimum=0.0, maximum=1.0, step=0.05, value=config.LLM_TOP_P)
+                        gr.Markdown(
+                            f"**Система**\n"
+                            f"- Реранкер: `{config.RERANKER_MODEL}`\n"
+                            f"- Книги: `{config.BOOKS_DIR}`\n"
+                            f"- REST API: `http://localhost:{config.API_PORT}/docs`"
+                        )
 
-                gr.Markdown("### Система")
-                gr.Markdown(f"- **Эмбеддинги**: `{config.EMBEDDING_MODEL}`\n- **Реранкер**: `{config.RERANKER_MODEL}`\n- **Книги**: `{config.BOOKS_DIR}`\n- **Результаты**: `{config.OUTPUT_DIR}`")
+                        s_save_btn = gr.Button("Сохранить настройки", variant="primary")
+                        s_save_status = gr.Textbox(label="", lines=1, interactive=False)
+                        s_save_btn.click(
+                            save_settings,
+                            inputs=[
+                                s_lm_url, s_lm_model, s_max_tokens, s_temperature, s_top_p,
+                                s_chunk_size, s_chunk_overlap, s_retrieval_top_k, s_rerank_top_k,
+                                s_emb_use_lm_studio, s_emb_lm_studio_model, s_emb_hf_model,
+                            ],
+                            outputs=[s_save_status],
+                        )
 
-                s_save_btn = gr.Button("💾 Применить настройки", variant="primary")
-                s_save_status = gr.Textbox(label="", lines=1, interactive=False)
-                s_save_btn.click(save_settings, inputs=[s_lm_url, s_lm_model, s_max_tokens, s_temperature, s_top_p], outputs=[s_save_status])
+        # ========== Привязка событий чата ==========
+        chat_send.click(
+            chat_respond,
+            inputs=[chat_input, chatbot],
+            outputs=[chatbot],
+        ).then(lambda: "", outputs=[chat_input])
+
+        chat_input.submit(
+            chat_respond,
+            inputs=[chat_input, chatbot],
+            outputs=[chatbot],
+        ).then(lambda: "", outputs=[chat_input])
+
+        chat_clear.click(lambda: [], outputs=[chatbot])
+        kb_refresh_btn.click(on_get_stats, outputs=[kb_info])
+
+        # Загрузить статистику при старте
+        app.load(on_get_stats, outputs=[kb_info])
 
     return app
 
@@ -499,10 +583,10 @@ if __name__ == "__main__":
         server_port=config.GUI_PORT,
         share=config.GUI_SHARE,
         inbrowser=True,
-        theme=gr.themes.Soft(
-            primary_hue="indigo",
-            secondary_hue="purple",
-            neutral_hue="slate",
-        ),
         css=custom_css,
+        theme=gr.themes.Soft(
+            primary_hue="violet",
+            secondary_hue="indigo",
+            neutral_hue="gray",
+        ),
     )
